@@ -1,0 +1,11 @@
+# Build Plan & Traceability Matrix: WeatherWatch Pro v6
+
+## 1. Topological Execution & Traceability Matrix (RTM)
+
+| STORY-ID | Title | Dependencies | Covered IDs | Target Files | Verification Assertion |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| SCAFFOLD | Core Runtime Chassis, SQLite Seed & Application Shell | None | UI-1 | package.json, src/db.js, data/seed.sql, src/index.js, public/index.html, public/app.js | `GET /health` returns `200 { "status": "online", "ok": true }` and `POST /api/reset` returns `200 { "ok": true }` after seeding base tables. |
+| STORY-1 | Spatial Resolution, Geocoding & Coordinate Dispatcher | SCAFFOLD | FR-1, FR-2, EC-1, EC-2, UI-2, UI-3, AD-1, AD-4, AD-5, INT-1, INT-2 | src/routes/weather.routes.js, src/services/geocode.service.js, public/index.html, public/app.js | Given invalid query text or oceanic coordinates, when geocoding routes execute, then `GET /api/geocode/search?q=` returns `400` for blank input, and `GET /api/geocode/reverse` returns decimal coordinates fallback string without halting. |
+| STORY-2 | Live Meteorological Telemetry & Baseline Failover | STORY-1 | FR-3, EC-3, UI-4, AD-3, INT-3 | src/routes/weather.routes.js, src/services/forecast.service.js, public/index.html, public/app.js | Given target coordinates, when `GET /api/weather?latitude=40.4168&longitude=-3.7038` executes, then payload returns 200 containing current metrics and falls back to SQLite baseline with degraded envelope on network failure. |
+| STORY-3 | Historical Horizon Variance Engine | STORY-2 | FR-4, EC-4, AD-2, INT-4 | src/routes/weather.routes.js, src/services/history.service.js, public/index.html, public/app.js | Given an active target coordinate, when `GET /api/history?latitude=40.4168&longitude=-3.7038` executes, then response returns exact -7d, -30d, and -365d temperature deltas computed via elapsed milliseconds without leap year drift. |
+| STORY-4 | Analytical Hourly & 7-Day Synoptic Projections with Verification | STORY-3 | FR-5, UI-5, UI-6 | src/routes/weather.routes.js, src/services/forecast.service.js, public/index.html, public/app.js, tests/poc.test.js | Given route transition to `#/analysis`, when telemetry hydrates, then 24 hourly non-scrolling grid cells and 7 daily tabular forecast rows render successfully, passing all assertions in `tests/poc.test.js`. |

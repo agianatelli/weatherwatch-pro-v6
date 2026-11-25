@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WeatherWatch Pro v6</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230284c7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z'/></svg>">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            background: 'hsl(var(--background))',
+            foreground: 'hsl(var(--foreground))',
+            card: 'hsl(var(--card))',
+            primary: 'hsl(var(--primary))',
+            muted: 'hsl(var(--muted))',
+            'muted-foreground': 'hsl(var(--muted-foreground))',
+            border: 'hsl(var(--border))'
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Leaflet JS CDN -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- App Client Scripts in Required Sequence -->
+  <script defer src="/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+
+    :root {
+      --background: 210 20% 98%;
+      --foreground: 222 47% 11%;
+      --card: 0 0% 100%;
+      --primary: 201 96% 32%;
+      --muted: 210 20% 92%;
+      --muted-foreground: 215 16% 47%;
+      --border: 214 32% 88%;
+      --radius: 0.5rem;
+    }
+
+    .dark {
+      --background: 222 47% 11%;
+      --foreground: 210 20% 98%;
+      --card: 217 33% 17%;
+      --primary: 199 89% 48%;
+      --muted: 217 33% 24%;
+      --muted-foreground: 215 20% 65%;
+      --border: 217 33% 28%;
+      --radius: 0.5rem;
+    }
+
+    body {
+      background-color: hsl(var(--background));
+      color: hsl(var(--foreground));
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      overflow-x: hidden;
+    }
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Map container styling for consistent zero horizontal overflow */
+    #map-viewport {
+      min-height: 380px;
+      height: 440px;
+      width: 100%;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body x-data="app" class="min-h-screen flex flex-col font-sans transition-colors duration-200">
+  <!-- Toast Notification Stack [EC-*] -->
+  <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full px-4" aria-live="assertive">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div 
+        x-show="toast.visible" 
+        x-cloak 
+        :class="toast.type === 'error' ? 'bg-red-50 border-red-300 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-200' : 'bg-amber-50 border-amber-300 text-amber-900 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-200'"
+        class="flex items-center gap-3 p-3.5 rounded-lg border shadow-lg text-sm transition-all duration-200"
+      >
+        <i :data-lucide="toast.type === 'error' ? 'alert-circle' : 'info'" class="w-5 h-5 flex-shrink-0"></i>
+        <span class="flex-1 font-medium" x-text="toast.message"></span>
+        <button 
+          @click="removeToast(toast.id)" 
+          type="button" 
+          class="p-1 rounded hover:bg-black/5 dark:hover:bg-white/10 min-w-8 min-h-8 flex items-center justify-center focus-visible:ring-2"
+          aria-label="Dismiss alert"
+        >
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </template>
+  </div>
+
+  <!-- Global Navigation Header [UI-1] -->
+  <header class="border-b border-border bg-card sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+      <!-- Brand Title & Spatial Context -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-base font-semibold leading-tight flex items-center gap-2">
+            WeatherWatch Pro
+            <span class="text-xs font-normal px-2 py-0.5 rounded bg-primary/15 text-primary border border-primary/20">v6</span>
+          </h1>
+          <p class="text-xs text-muted-foreground flex items-center gap-1">
+            <span class="inline-block w-2 h-2 rounded-full" :class="isDegraded ? 'bg-amber-500' : 'bg-emerald-500'"></span>
+            <span x-text="isDegraded ? 'Baseline Telemetry' : 'Operational Live'"></span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Semantic View Navigation -->
+      <nav class="flex items-center bg-muted p-1 rounded-lg border border-border" aria-label="Main Navigation">
+        <a 
+          href="#/map" 
+          :class="activeView === 'map' ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'"
+          class="px-3.5 py-1.5 text-xs rounded-md transition-all flex items-center gap-1.5 min-h-10 min-w-10 justify-center focus-visible:ring-2"
+          :aria-current="activeView === 'map' ? 'page' : undefined"
+        >
+          <i data-lucide="map" class="w-4 h-4"></i>
+          <span>Map View</span>
+        </a>
+        <a 
+          href="#/analysis" 
+          :class="activeView === 'analysis' ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'"
+          class="px-3.5 py-1.5 text-xs rounded-md transition-all flex items-center gap-1.5 min-h-10 min-w-10 justify-center focus-visible:ring-2"
+          :aria-current="activeView === 'analysis' ? 'page' : undefined"
+        >
+          <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+          <span>Analysis</span>
+        </a>
+      </nav>
+
+      <!-- Global Controls: Geolocation, Theme & Reset -->
+      <div class="flex items-center gap-2">
+        <button 
+          @click="acquireBrowserLocation()"
+          :disabled="geoLocating"
+          type="button" 
+          class="p-2 rounded-md border border-border bg-card text-foreground hover:bg-muted min-w-10 min-h-10 flex items-center justify-center focus-visible:ring-2"
+          title="Detect My Location (Browser GPS)"
+          aria-label="Acquire Browser Geolocation"
+        >
+          <i data-lucide="crosshair" class="w-4 h-4" :class="geoLocating ? 'animate-spin' : ''"></i>
+        </button>
+
+        <button 
+          id="theme-toggle"
+          @click="toggleTheme()" 
+          type="button" 
+          class="p-2 rounded-md border border-border bg-card text-foreground hover:bg-muted min-w-10 min-h-10 flex items-center justify-center focus-visible:ring-2"
+          :aria-label="isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'"
+        >
+          <i :data-lucide="isDark ? 'sun' : 'moon'" class="w-4 h-4"></i>
+        </button>
+
+        <button 
+          @click="resetDemo()" 
+          type="button" 
+          class="px-3 py-2 rounded-md border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted flex items-center gap-1.5 min-w-10 min-h-10 justify-center focus-visible:ring-2"
+          :disabled="resetting"
+          title="Reset baseline dataset"
+        >
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5" :class="resetting ? 'animate-spin' : ''"></i>
+          <span class="hidden sm:inline">Reset Demo</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main View Router Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 flex flex-col gap-4">
+    <!-- Map View Workspace (#/map) [UI-2, UI-3, UI-4] -->
+    <section x-show="activeView === 'map'" x-cloak class="flex flex-col gap-4">
+      <!-- UI-2: Spatial Search & Quick-Hub Dispatcher -->
+      <div class="rounded-lg border border-border bg-card p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <!-- Search Input -->
+        <form @submit.prevent="executeSearch()" class="flex-1 relative flex flex-col sm:flex-row gap-2">
+          <div class="flex-1">
+            <label for="location-search" class="block text-xs font-medium text-muted-foreground mb-1">Search Location</label>
+            <div class="relative">
+              <input 
+                id="location-search"
+                type="text" 
+                x-model="searchQuery"
+                placeholder="Enter city name (e.g. Madrid, Barcelona)..." 
+                class="w-full bg-background border border-border rounded-md px-3.5 py-2 pl-9 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-h-10"
+              />
+              <div class="absolute left-3 top-2.5 text-muted-foreground pointer-events-none">
+                <i data-lucide="search" class="w-4 h-4"></i>
+              </div>
+            </div>
+          </div>
+          <div class="sm:self-end">
+            <button 
+              type="submit" 
+              :disabled="searching"
+              class="w-full sm:w-auto px-4 py-2 bg-primary text-white rounded-md text-sm font-medium hover:opacity-90 flex items-center justify-center gap-2 min-h-10 min-w-10 focus-visible:ring-2"
+            >
+              <i data-lucide="arrow-right" class="w-4 h-4" :class="searching ? 'animate-spin' : ''"></i>
+              <span>Search</span>
+            </button>
+          </div>
+        </form>
+
+        <!-- Quick Hub Selector Chips -->
+        <div class="flex flex-col gap-1 sm:items-end">
+          <span class="text-xs font-medium text-muted-foreground">Quick Hubs</span>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <template x-for="hub in hubs" :key="hub.slug">
+              <button 
+                type="button" 
+                @click="selectHub(hub)"
+                :class="activeHub === hub.slug ? 'bg-primary text-white border-primary' : 'bg-muted text-foreground hover:bg-muted/80 border-border'"
+                class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors min-h-10 min-w-10 flex items-center justify-center focus-visible:ring-2"
+                x-text="hub.name"
+              ></button>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search Results Dropdown/Flyout if multiple matches found -->
+      <div x-show="searchResults.length > 0" x-cloak class="rounded-lg border border-border bg-card p-3 shadow-md flex flex-col gap-1">
+        <div class="flex items-center justify-between text-xs text-muted-foreground pb-1 border-b border-border">
+          <span>Search Suggestions:</span>
+          <button @click="searchResults = []" class="text-xs hover:text-foreground">Dismiss</button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+          <template x-for="res in searchResults" :key="res.id">
+            <button 
+              type="button"
+              @click="applySearchResult(res)"
+              class="text-left p-2 rounded hover:bg-muted flex flex-col border border-border/50 text-xs min-h-10 justify-center"
+            >
+              <span class="font-medium text-foreground" x-text="res.name"></span>
+              <span class="text-muted-foreground text-[11px]" x-text="[res.admin1, res.country].filter(Boolean).join(', ')"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Main Layout: Map Canvas + Spatial Overview Panel -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <!-- UI-3: Spatial Map Viewport (2 Cols on lg) -->
+        <div class="lg:col-span-2 rounded-lg border border-border bg-card p-3 shadow-sm flex flex-col gap-2">
+          <div class="flex items-center justify-between px-1">
+            <div class="flex items-center gap-2">
+              <i data-lucide="compass" class="w-4 h-4 text-primary"></i>
+              <span class="text-sm font-semibold">Interactive Map Canvas</span>
+            </div>
+            <span class="text-xs text-muted-foreground flex items-center gap-1">
+              <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i>
+              <span>Click canvas to pick coordinates</span>
+            </span>
+          </div>
+
+          <!-- Leaflet Viewport Container -->
+          <div class="relative w-full rounded-md overflow-hidden border border-border bg-muted/30">
+            <div id="map-viewport"></div>
+            <!-- Loading Overlay -->
+            <div x-show="geocodingLoading" x-cloak class="absolute inset-0 bg-background/50 backdrop-blur-xs flex items-center justify-center z-20">
+              <div class="bg-card px-4 py-2 rounded-md shadow border border-border flex items-center gap-2 text-xs font-medium">
+                <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-primary"></i>
+                <span>Resolving Location...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- UI-4: Telemetry & Historical Delta Panel (1 Col on lg) -->
+        <div class="rounded-lg border border-border bg-card p-4 shadow-sm flex flex-col gap-4">
+          <!-- Active Target Header -->
+          <div class="border-b border-border pb-3 flex flex-col gap-1">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-primary uppercase tracking-wider">Active Target Telemetry</span>
+              <span 
+                :class="weather.source === 'live' ? 'text-emerald-700 bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300' : 'text-amber-700 bg-amber-100 dark:bg-amber-950 dark:text-amber-300'"
+                class="px-2 py-0.5 rounded font-medium uppercase text-[10px]" 
+                x-text="weather.source"
+              ></span>
+            </div>
+            <h2 class="text-lg font-bold text-foreground leading-tight" x-text="currentLocation.formatted || 'Madrid, Spain'"></h2>
+            <div class="text-xs text-muted-foreground tabular-nums flex items-center gap-2">
+              <span x-text="'Lat: ' + coords.latitude.toFixed(4) + '°'"></span>
+              <span>&bull;</span>
+              <span x-text="'Lon: ' + coords.longitude.toFixed(4) + '°'"></span>
+            </div>
+          </div>
+
+          <!-- Degraded Baseline Notification [EC-3] -->
+          <div x-show="isDegraded" x-cloak class="p-2.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-center gap-2 text-xs">
+            <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0"></i>
+            <span>Data Source Offline - Displaying Baseline Cache</span>
+          </div>
+
+          <!-- Loading State (Skeleton Matrix) -->
+          <div x-show="telemetryLoading" x-cloak class="grid grid-cols-2 gap-2">
+            <div class="p-3 rounded-lg border border-border bg-muted/40 animate-pulse flex flex-col gap-2">
+              <div class="h-3 w-16 bg-muted rounded"></div>
+              <div class="h-7 w-20 bg-muted rounded"></div>
+            </div>
+            <div class="p-3 rounded-lg border border-border bg-muted/40 animate-pulse flex flex-col gap-2">
+              <div class="h-3 w-16 bg-muted rounded"></div>
+              <div class="h-7 w-20 bg-muted rounded"></div>
+            </div>
+            <div class="p-3 rounded-lg border border-border bg-muted/40 animate-pulse flex flex-col gap-2">
+              <div class="h-3 w-16 bg-muted rounded"></div>
+              <div class="h-7 w-20 bg-muted rounded"></div>
+            </div>
+            <div class="p-3 rounded-lg border border-border bg-muted/40 animate-pulse flex flex-col gap-2">
+              <div class="h-3 w-16 bg-muted rounded"></div>
+              <div class="h-7 w-20 bg-muted rounded"></div>
+            </div>
+          </div>
+
+          <!-- Hydrated Telemetry Metrics Cards (FR-3) -->
+          <div x-show="!telemetryLoading && weather.current" class="flex flex-col gap-3">
+            <!-- Condition Banner -->
+            <div class="p-3 rounded-lg bg-primary/5 border border-primary/15 flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                  <i :data-lucide="getWeatherDescription(weather.current?.weather_code).icon" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <span class="text-xs text-muted-foreground block">Sky Condition</span>
+                  <span class="text-sm font-semibold text-foreground" x-text="getWeatherDescription(weather.current?.weather_code).text"></span>
+                </div>
+              </div>
+              <span class="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground tabular-nums" x-text="'WMO ' + (weather.current?.weather_code ?? 0)"></span>
+            </div>
+
+            <!-- 4-Card Primary Grid -->
+            <div class="grid grid-cols-2 gap-2">
+              <!-- Temperature -->
+              <div class="p-3 rounded-lg border border-border bg-card flex flex-col justify-between">
+                <span class="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <i data-lucide="thermometer" class="w-3.5 h-3.5 text-primary"></i>
+                  <span>Temperature</span>
+                </span>
+                <div class="mt-1 flex items-baseline gap-1">
+                  <span class="text-2xl font-bold tabular-nums text-foreground" x-text="weather.current?.temperature?.toFixed(1) ?? '--'"></span>
+                  <span class="text-xs text-muted-foreground">°C</span>
+                </div>
+              </div>
+
+              <!-- Feels Like -->
+              <div class="p-3 rounded-lg border border-border bg-card flex flex-col justify-between">
+                <span class="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <i data-lucide="user-check" class="w-3.5 h-3.5 text-primary"></i>
+                  <span>Feels Like</span>
+                </span>
+                <div class="mt-1 flex items-baseline gap-1">
+                  <span class="text-2xl font-bold tabular-nums text-foreground" x-text="weather.current?.apparent_temperature?.toFixed(1) ?? '--'"></span>
+                  <span class="text-xs text-muted-foreground">°C</span>
+                </div>
+              </div>
+
+              <!-- Humidity -->
+              <div class="p-3 rounded-lg border border-border bg-card flex flex-col justify-between">
+                <span class="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <i data-lucide="droplets" class="w-3.5 h-3.5 text-primary"></i>
+                  <span>Humidity</span>
+                </span>
+                <div class="mt-1 flex items-baseline gap-1">
+                  <span class="text-2xl font-bold tabular-nums text-foreground" x-text="weather.current?.relative_humidity ?? '--'"></span>
+                  <span class="text-xs text-muted-foreground">%</span>
+                </div>
+              </div>
+
+              <!-- Wind Speed -->
+              <div class="p-3 rounded-lg border border-border bg-card flex flex-col justify-between">
+                <span class="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <i data-lucide="wind" class="w-3.5 h-3.5 text-primary"></i>
+                  <span>Wind Speed</span>
+                </span>
+                <div class="mt-1 flex items-baseline gap-1">
+                  <span class="text-2xl font-bold tabular-nums text-foreground" x-text="weather.current?.wind_speed?.toFixed(1) ?? '--'"></span>
+                  <span class="text-xs text-muted-foreground">km/h</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Historical Horizon Variance Section (FR-4, EC-4, AD-2) -->
+          <div class="border-t border-border pt-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <i data-lucide="history" class="w-3.5 h-3.5 text-primary"></i>
+                <span>Historical Variance</span>
+              </span>
+              <span class="text-[11px] text-muted-foreground">Deterministic Horizons</span>
+            </div>
+
+            <!-- Historical Loading Skeleton -->
+            <div x-show="historyLoading" x-cloak class="grid grid-cols-3 gap-2">
+              <div class="p-2.5 rounded-lg border border-border bg-muted/40 animate-pulse h-14"></div>
+              <div class="p-2.5 rounded-lg border border-border bg-muted/40 animate-pulse h-14"></div>
+              <div class="p-2.5 rounded-lg border border-border bg-muted/40 animate-pulse h-14"></div>
+            </div>
+
+            <!-- Hydrated Variance Badges -->
+            <div x-show="!historyLoading && history.offset_7d" class="grid grid-cols-3 gap-2">
+              <!-- -7 Days -->
+              <div class="p-2.5 rounded-lg border border-border bg-card flex flex-col items-center justify-center text-center">
+                <span class="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">-7 Days</span>
+                <span 
+                  class="text-xs font-bold tabular-nums mt-0.5"
+                  :class="history.offset_7d?.delta >= 0 ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'"
+                  x-text="formatDelta(history.offset_7d?.delta)"
+                ></span>
+                <span class="text-[10px] text-muted-foreground tabular-nums mt-0.5" x-text="history.offset_7d?.temperature?.toFixed(1) + '°C'"></span>
+              </div>
+
+              <!-- -30 Days -->
+              <div class="p-2.5 rounded-lg border border-border bg-card flex flex-col items-center justify-center text-center">
+                <span class="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">-30 Days</span>
+                <span 
+                  class="text-xs font-bold tabular-nums mt-0.5"
+                  :class="history.offset_30d?.delta >= 0 ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'"
+                  x-text="formatDelta(history.offset_30d?.delta)"
+                ></span>
+                <span class="text-[10px] text-muted-foreground tabular-nums mt-0.5" x-text="history.offset_30d?.temperature?.toFixed(1) + '°C'"></span>
+              </div>
+
+              <!-- -365 Days -->
+              <div class="p-2.5 rounded-lg border border-border bg-card flex flex-col items-center justify-center text-center">
+                <span class="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">-365 Days</span>
+                <span 
+                  class="text-xs font-bold tabular-nums mt-0.5"
+                  :class="history.offset_365d?.delta >= 0 ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'"
+                  x-text="formatDelta(history.offset_365d?.delta)"
+                ></span>
+                <span class="text-[10px] text-muted-foreground tabular-nums mt-0.5" x-text="history.offset_365d?.temperature?.toFixed(1) + '°C'"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State (No Telemetry Coordinates) -->
+          <div x-show="!telemetryLoading && !weather.current" x-cloak class="p-6 border border-dashed border-border rounded-lg text-center flex flex-col items-center justify-center gap-2">
+            <i data-lucide="cloud-off" class="w-8 h-8 text-muted-foreground"></i>
+            <span class="text-xs text-muted-foreground">No meteorological observations loaded</span>
+            <button @click="setTargetCoordinates(coords.latitude, coords.longitude)" class="mt-1 text-xs text-primary font-medium hover:underline">
+              Retry Observation Query
+            </button>
+          </div>
+
+          <!-- Spatial Instructions / Operator Notes -->
+          <div class="text-xs text-muted-foreground space-y-2 mt-auto border-t border-border pt-3">
+            <p>
+              &bull; <strong class="text-foreground">Anti-Simulation Standard:</strong> Metrics reflect verified upstream APIs or deterministic baseline cache.
+            </p>
+            <p>
+              &bull; Epoch delta computation calculates calendar variances without leap year drift.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analysis View Workspace (#/analysis) [FR-5, UI-5, UI-6, UJ-3] -->
+    <section x-show="activeView === 'analysis'" x-cloak class="flex flex-col gap-6">
+      <!-- Target Summary Header Bar -->
+      <div class="rounded-lg border border-border bg-card p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <i data-lucide="line-chart" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-base font-bold text-foreground" x-text="currentLocation.formatted || 'Madrid, Spain'"></h2>
+              <span 
+                :class="weather.source === 'live' ? 'text-emerald-700 bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300' : 'text-amber-700 bg-amber-100 dark:bg-amber-950 dark:text-amber-300'"
+                class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider" 
+                x-text="weather.source"
+              ></span>
+            </div>
+            <div class="text-xs text-muted-foreground tabular-nums">
+              <span>Lat: <strong class="text-foreground" x-text="coords.latitude.toFixed(4) + '°'"></strong></span>
+              <span class="mx-1">&bull;</span>
+              <span>Lon: <strong class="text-foreground" x-text="coords.longitude.toFixed(4) + '°'"></strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick navigation action back to map -->
+        <a 
+          href="#/map" 
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-muted/60 text-xs font-medium text-foreground hover:bg-muted min-h-10 min-w-10 justify-center focus-visible:ring-2"
+        >
+          <i data-lucide="map-pin" class="w-3.5 h-3.5 text-primary"></i>
+          <span>Change Coordinates on Map</span>
+        </a>
+      </div>
+
+      <!-- Degraded Notice for Analysis View [EC-3] -->
+      <div x-show="isDegraded" x-cloak class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-center gap-2 text-xs">
+        <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0"></i>
+        <span>External weather provider offline &bull; Displaying seeded synoptic baseline dataset</span>
+      </div>
+
+      <!-- UI-5: Analytical 24-Hour Non-Scrolling Metric Grid [FR-5, UI-5] -->
+      <div class="rounded-lg border border-border bg-card p-5 shadow-sm flex flex-col gap-3">
+        <div class="flex items-center justify-between border-b border-border pb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="clock" class="w-4 h-4 text-primary"></i>
+            <h3 class="text-sm font-semibold text-foreground">24-Hour Analytical Projection Grid</h3>
+          </div>
+          <span class="text-xs text-muted-foreground">Fixed wrapping grid &bull; Zero horizontal scrolling</span>
+        </div>
+
+        <!-- Loading Skeleton (UI-5) -->
+        <div x-show="telemetryLoading" x-cloak class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-12 gap-2">
+          <template x-for="i in 24" :key="i">
+            <div class="p-2.5 rounded border border-border bg-muted/40 animate-pulse h-20 flex flex-col justify-between">
+              <div class="h-2.5 w-8 bg-muted rounded"></div>
+              <div class="h-4 w-4 bg-muted rounded-full mx-auto"></div>
+              <div class="h-3 w-10 bg-muted rounded mx-auto"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Hydrated 24h Grid (UI-5) -->
+        <div x-show="!telemetryLoading && weather.hourly.length > 0" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-12 gap-2">
+          <template x-for="(cell, idx) in weather.hourly" :key="idx">
+            <div class="p-2 rounded-lg border border-border/80 bg-background hover:border-primary/50 transition-colors flex flex-col items-center justify-between text-center min-h-[5rem]">
+              <span class="text-[11px] font-medium text-muted-foreground tabular-nums" x-text="formatHourLabel(cell.time)"></span>
+              <div class="my-1 text-primary">
+                <i :data-lucide="getWeatherDescription(cell.weather_code).icon" class="w-4 h-4"></i>
+              </div>
+              <div class="flex items-baseline gap-0.5">
+                <span class="text-xs font-bold tabular-nums text-foreground" x-text="cell.temperature?.toFixed(1)"></span>
+                <span class="text-[10px] text-muted-foreground">°C</span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Empty State (UI-5) -->
+        <div x-show="!telemetryLoading && weather.hourly.length === 0" x-cloak class="p-8 border border-dashed border-border rounded-lg text-center flex flex-col items-center justify-center gap-2">
+          <i data-lucide="calendar-x" class="w-8 h-8 text-muted-foreground"></i>
+          <span class="text-xs text-muted-foreground font-medium">No hourly projection data available</span>
+          <button @click="setTargetCoordinates(coords.latitude, coords.longitude)" class="mt-1 text-xs text-primary font-medium hover:underline">
+            Reload Hourly Observations
+          </button>
+        </div>
+      </div>
+
+      <!-- UI-6: Multi-Day Synoptic Forecast Table [FR-5, UI-6] -->
+      <div class="rounded-lg border border-border bg-card p-5 shadow-sm flex flex-col gap-3">
+        <div class="flex items-center justify-between border-b border-border pb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="calendar" class="w-4 h-4 text-primary"></i>
+            <h3 class="text-sm font-semibold text-foreground">7-Day Synoptic Horizon Projection</h3>
+          </div>
+          <span class="text-xs text-muted-foreground">Comparative daily minimums & maximums</span>
+        </div>
+
+        <!-- Loading Skeleton (UI-6) -->
+        <div x-show="telemetryLoading" x-cloak class="flex flex-col gap-2">
+          <template x-for="i in 7" :key="i">
+            <div class="p-3 rounded border border-border bg-muted/40 animate-pulse h-12 flex items-center justify-between">
+              <div class="h-3 w-24 bg-muted rounded"></div>
+              <div class="h-3 w-16 bg-muted rounded"></div>
+              <div class="h-3 w-32 bg-muted rounded"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Hydrated Forecast Table (UI-6) -->
+        <div x-show="!telemetryLoading && weather.daily.length > 0" class="overflow-hidden border border-border rounded-lg">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-muted/50 border-b border-border text-muted-foreground font-medium uppercase tracking-wider text-[11px]">
+                <th scope="col" class="py-2.5 px-3">Horizon / Date</th>
+                <th scope="col" class="py-2.5 px-3">Expected Sky Condition</th>
+                <th scope="col" class="py-2.5 px-3 text-right">Min Temp</th>
+                <th scope="col" class="py-2.5 px-3 text-right">Max Temp</th>
+                <th scope="col" class="py-2.5 px-3 text-center">Variance Span</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              <template x-for="(day, idx) in weather.daily" :key="idx">
+                <tr class="hover:bg-muted/30 transition-colors">
+                  <!-- Date Column -->
+                  <td class="py-3 px-3 font-medium text-foreground">
+                    <div class="flex items-center gap-2">
+                      <span class="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold" x-text="'+' + idx + 'd'"></span>
+                      <span x-text="formatDayLabel(day.date)"></span>
+                    </div>
+                  </td>
+
+                  <!-- Sky Condition -->
+                  <td class="py-3 px-3">
+                    <div class="flex items-center gap-2">
+                      <div class="w-6 h-6 rounded bg-muted/80 text-primary flex items-center justify-center">
+                        <i :data-lucide="getWeatherDescription(day.weather_code).icon" class="w-3.5 h-3.5"></i>
+                      </div>
+                      <span class="text-foreground" x-text="getWeatherDescription(day.weather_code).text"></span>
+                    </div>
+                  </td>
+
+                  <!-- Min Temperature -->
+                  <td class="py-3 px-3 text-right tabular-nums font-medium text-blue-600 dark:text-blue-400">
+                    <span x-text="day.temp_min?.toFixed(1)"></span>°C
+                  </td>
+
+                  <!-- Max Temperature -->
+                  <td class="py-3 px-3 text-right tabular-nums font-medium text-rose-600 dark:text-rose-400">
+                    <span x-text="day.temp_max?.toFixed(1)"></span>°C
+                  </td>
+
+                  <!-- Visual Span Indicator -->
+                  <td class="py-3 px-3">
+                    <div class="flex items-center justify-center gap-2">
+                      <span class="text-[10px] text-muted-foreground tabular-nums" x-text="'Δ ' + ((day.temp_max - day.temp_min) > 0 ? (day.temp_max - day.temp_min).toFixed(1) : '0.0') + '°C'"></span>
+                      <div class="w-20 bg-muted rounded-full h-1.5 overflow-hidden flex">
+                        <div class="bg-primary/80 h-full rounded-full" :style="'width: ' + Math.min(100, Math.max(15, (day.temp_max - day.temp_min) * 7)) + '%'"></div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Empty State (UI-6) -->
+        <div x-show="!telemetryLoading && weather.daily.length === 0" x-cloak class="p-8 border border-dashed border-border rounded-lg text-center flex flex-col items-center justify-center gap-2">
+          <i data-lucide="cloud-off" class="w-8 h-8 text-muted-foreground"></i>
+          <span class="text-xs text-muted-foreground font-medium">No 7-day projection horizon available</span>
+          <button @click="setTargetCoordinates(coords.latitude, coords.longitude)" class="mt-1 text-xs text-primary font-medium hover:underline">
+            Reload Daily Forecast
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="border-t border-border bg-card mt-auto py-4 text-center text-xs text-muted-foreground">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <span>WeatherWatch Pro v6 &bull; Zero-Build Fullstack Chassis</span>
+      <span>W3C HSL Tokens &bull; WCAG 2.1 AA Compliant</span>
+    </div>
+  </footer>
+</body>
+</html>
